@@ -1,0 +1,234 @@
+# ============================================================================
+# Connected Vehicle Telemetry & Predictive Diagnostics Platform
+# One-command stack:   cp .env.example .env && docker compose up --build
+#
+# Brings up: Kafka (KRaft, no Zookeeper), Postgres, all 6 microservices,
+# Prometheus and Grafana. CAN ingestion defaults to simulator mode so no
+# real hardware is required.
+# ============================================================================
+
+name: connected-vehicle
+
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  networks: [fleet]
+  environment: &common-env
+    SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-docker}
+    SPRING_KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
+    TOPIC_RAW_CAN: ${TOPIC_RAW_CAN:-raw-can-frames}
+    TOPIC_DECODED: ${TOPIC_DECODED:-decoded-telemetry}
+    TOPIC_ALERTS: ${TOPIC_ALERTS:-diagnostic-alerts}
+
+services:
+
+  # -------------------------------------------------------------------------
+  # Kafka in KRaft mode (single broker + controller). No Zookeeper needed.
+  # -------------------------------------------------------------------------
+  kafka:
+    image: confluentinc/cp-kafka:7.7.1
+    container_name: kafka
+    networks: [fleet]
+    ports:
+      - "${KAFKA_HOST_PORT:-9094}:9094"   # external listener for host tools
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      # Bind on all interfaces so the container-local healthcheck (localhost:9092)
+      # works; advertise the reachable hostnames separately below.
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,EXTERNAL://0.0.0.0:9094
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:${KAFKA_HOST_PORT:-9094}
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 20s
+
+  # One-shot: explicitly create topics with sensible partition counts.
+  kafka-init:
+    image: confluentinc/cp-kafka:7.7.1
+    container_name: kafka-init
+    networks: [fleet]
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -e
+        kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic ${TOPIC_RAW_CAN:-raw-can-frames} --partitions 3 --replication-factor 1
+        kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic ${TOPIC_DECODED:-decoded-telemetry} --partitions 3 --replication-factor 1
+        kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic ${TOPIC_ALERTS:-diagnostic-alerts} --partitions 3 --replication-factor 1
+        echo "Topics created:" && kafka-topics --bootstrap-server kafka:9092 --list
+    restart: "no"
+
+  # -------------------------------------------------------------------------
+  # PostgreSQL — schema auto-initialised from infra/postgres/init on first run.
+  # -------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    networks: [fleet]
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-telemetry}
+      POSTGRES_USER: ${POSTGRES_USER:-fleet}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fleetpass}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fleet} -d ${POSTGRES_DB:-telemetry}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # -------------------------------------------------------------------------
+  # Microservices
+  # -------------------------------------------------------------------------
+  can-ingestion-service:
+    <<: *service-defaults
+    build: { context: ., dockerfile: can-ingestion-service/Dockerfile }
+    container_name: can-ingestion-service
+    ports:
+      - "${INGESTION_PORT:-8081}:8081"
+    environment:
+      <<: *common-env
+      CAN_MODE: ${CAN_MODE:-simulator}
+      CAN_INTERFACE: ${CAN_INTERFACE:-vcan0}
+      SIM_VEHICLE_COUNT: ${SIM_VEHICLE_COUNT:-3}
+      SIM_RATE_HZ: ${SIM_RATE_HZ:-10}
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  dbc-decoder-service:
+    <<: *service-defaults
+    build: { context: ., dockerfile: dbc-decoder-service/Dockerfile }
+    container_name: dbc-decoder-service
+    ports:
+      - "${DECODER_PORT:-8082}:8082"
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  telemetry-storage-service:
+    <<: *service-defaults
+    build: { context: ., dockerfile: telemetry-storage-service/Dockerfile }
+    container_name: telemetry-storage-service
+    ports:
+      - "${STORAGE_PORT:-8083}:8083"
+    environment:
+      <<: *common-env
+      SPRING_DATASOURCE_URL: jdbc:postgresql://${POSTGRES_HOST:-postgres}:5432/${POSTGRES_DB:-telemetry}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-fleet}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-fleetpass}
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  predictive-diagnostics-service:
+    <<: *service-defaults
+    build: { context: ., dockerfile: predictive-diagnostics-service/Dockerfile }
+    container_name: predictive-diagnostics-service
+    ports:
+      - "${DIAGNOSTICS_PORT:-8084}:8084"
+    environment:
+      <<: *common-env
+      SPRING_DATASOURCE_URL: jdbc:postgresql://${POSTGRES_HOST:-postgres}:5432/${POSTGRES_DB:-telemetry}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-fleet}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-fleetpass}
+      COOLANT_TEMP_WARN: ${COOLANT_TEMP_WARN:-105}
+      COOLANT_TEMP_CRIT: ${COOLANT_TEMP_CRIT:-115}
+      BATTERY_VOLTAGE_MIN: ${BATTERY_VOLTAGE_MIN:-11.8}
+      RPM_MAX: ${RPM_MAX:-6500}
+      ZSCORE_THRESHOLD: ${ZSCORE_THRESHOLD:-3.0}
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  fleet-analytics-service:
+    <<: *service-defaults
+    build: { context: ., dockerfile: fleet-analytics-service/Dockerfile }
+    container_name: fleet-analytics-service
+    ports:
+      - "${ANALYTICS_PORT:-8085}:8085"
+    environment:
+      <<: *common-env
+      STORAGE_SERVICE_URL: http://telemetry-storage-service:8083
+      DIAGNOSTICS_SERVICE_URL: http://predictive-diagnostics-service:8084
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  api-gateway-service:
+    <<: *service-defaults
+    build: { context: ., dockerfile: api-gateway-service/Dockerfile }
+    container_name: api-gateway-service
+    ports:
+      - "${GATEWAY_PORT:-8080}:8080"
+    depends_on:
+      - can-ingestion-service
+      - dbc-decoder-service
+      - telemetry-storage-service
+      - predictive-diagnostics-service
+      - fleet-analytics-service
+
+  # -------------------------------------------------------------------------
+  # Observability
+  # -------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: prometheus
+    networks: [fleet]
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: grafana
+    networks: [fleet]
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+networks:
+  fleet:
+    driver: bridge
+
+volumes:
+  kafka-data:
+  postgres-data:
+  prometheus-data:
+  grafana-data:

@@ -1,0 +1,17 @@
+# Keep the Docker build context small and reproducible.
+# The Maven build runs INSIDE the build stage, so host build output and VCS
+# metadata must not be copied in.
+**/target/
+.git/
+.gitignore
+.env
+*.log
+.idea/
+*.iml
+.vscode/
+k8s/
+infra/grafana/
+infra/prometheus/
+README.md
+requests.http
+Makefile

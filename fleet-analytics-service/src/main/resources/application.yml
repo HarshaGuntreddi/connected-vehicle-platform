@@ -1,0 +1,44 @@
+server:
+  port: 8085
+
+spring:
+  application:
+    name: fleet-analytics-service
+  kafka:
+    bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: fleet-analytics
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.value.default.type: com.fleet.common.dto.DiagnosticAlert
+        spring.json.trusted.packages: com.fleet.common.dto
+        spring.json.use.type.headers: false
+
+topic:
+  alerts: ${TOPIC_ALERTS:diagnostic-alerts}
+
+services:
+  diagnostics-url: ${DIAGNOSTICS_SERVICE_URL:http://localhost:8084}
+  storage-url: ${STORAGE_SERVICE_URL:http://localhost:8083}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    tags:
+      service: fleet-analytics
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+
+logging:
+  level:
+    com.fleet: INFO

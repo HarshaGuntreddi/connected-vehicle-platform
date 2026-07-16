@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: predictive-diagnostics-service
+  namespace: connected-vehicle
+  labels:
+    app: predictive-diagnostics-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: predictive-diagnostics-service
+  template:
+    metadata:
+      labels:
+        app: predictive-diagnostics-service
+    spec:
+      containers:
+        - name: predictive-diagnostics-service
+          image: connected-vehicle/predictive-diagnostics-service:1.0.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8084
+              name: http
+          envFrom:
+            - configMapRef:
+                name: platform-config
+            - secretRef:
+                name: platform-secrets
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8084
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8084
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: predictive-diagnostics-service
+  namespace: connected-vehicle
+  labels:
+    app: predictive-diagnostics-service
+spec:
+  type: ClusterIP
+  selector:
+    app: predictive-diagnostics-service
+  ports:
+    - port: 8084
+      targetPort: 8084
+      name: http

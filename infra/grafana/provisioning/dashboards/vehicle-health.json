@@ -1,0 +1,92 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "title": "Vehicle Health Overview",
+  "uid": "vehicle-health",
+  "tags": ["connected-vehicle"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "time": { "from": "now-15m", "to": "now" },
+  "refresh": "10s",
+  "templating": {
+    "list": [
+      {
+        "name": "vehicle",
+        "label": "Vehicle",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "query": "label_values(vehicle_health_score, vehicle)",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Vehicle Health Score",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "min": 0, "max": 100, "unit": "short" } },
+      "targets": [
+        { "expr": "vehicle_health_score{vehicle=~\"$vehicle\"}", "legendFormat": "{{vehicle}}" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Coolant Temperature (latest decoded)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "celsius" } },
+      "targets": [
+        { "expr": "vehicle_signal_value{signal=\"CoolantTemp\", vehicle=~\"$vehicle\"}", "legendFormat": "{{vehicle}}" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Engine RPM",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "rotrpm" } },
+      "targets": [
+        { "expr": "vehicle_signal_value{signal=\"EngineSpeed\", vehicle=~\"$vehicle\"}", "legendFormat": "{{vehicle}}" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Battery Voltage",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "volt" } },
+      "targets": [
+        { "expr": "vehicle_signal_value{signal=\"BatteryVoltage\", vehicle=~\"$vehicle\"}", "legendFormat": "{{vehicle}}" }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Active Alerts (rate 5m)",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "sum by (severity) (rate(diagnostic_alerts_total[5m]))", "legendFormat": "{{severity}}" }
+      ]
+    },
+    {
+      "type": "gauge",
+      "title": "Fleet Average Health",
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "min": 0, "max": 100, "unit": "short" } },
+      "targets": [ { "expr": "fleet_avg_health_score" } ]
+    },
+    {
+      "type": "stat",
+      "title": "Telemetry Decoded /s",
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [ { "expr": "sum(rate(telemetry_decoded_total[1m]))" } ]
+    }
+  ]
+}

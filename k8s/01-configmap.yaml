@@ -1,0 +1,129 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: platform-config
+  namespace: connected-vehicle
+  labels:
+    app: platform-config
+data:
+  # --- Spring / Kafka ---
+  SPRING_PROFILES_ACTIVE: "docker"
+  SPRING_KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
+  # --- Kafka topics ---
+  TOPIC_RAW_CAN: "raw-can-frames"
+  TOPIC_DECODED: "decoded-telemetry"
+  TOPIC_ALERTS: "diagnostic-alerts"
+  # --- CAN ingestion (simulator) ---
+  CAN_MODE: "simulator"
+  SIM_VEHICLE_COUNT: "3"
+  SIM_RATE_HZ: "10"
+  # --- Datasource (credentials come from platform-secrets) ---
+  SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/telemetry"
+  # --- Diagnostics thresholds ---
+  COOLANT_TEMP_WARN: "105"
+  COOLANT_TEMP_CRIT: "115"
+  BATTERY_VOLTAGE_MIN: "11.8"
+  RPM_MAX: "6500"
+  ZSCORE_THRESHOLD: "3.0"
+  # --- Inter-service URLs (analytics) ---
+  STORAGE_SERVICE_URL: "http://telemetry-storage-service:8083"
+  DIAGNOSTICS_SERVICE_URL: "http://predictive-diagnostics-service:8084"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+  namespace: connected-vehicle
+  labels:
+    app: postgres
+data:
+  01_schema.sql: |
+    -- ============================================================================
+    -- Connected Vehicle Platform — database schema
+    -- Executed automatically by the Postgres image on first startup
+    -- (mounted into /docker-entrypoint-initdb.d).
+    -- ============================================================================
+
+    -- ---------------------------------------------------------------------------
+    -- Time-series telemetry. One row per (vehicle, signal, timestamp) sample.
+    -- Design notes:
+    --   * Narrow, append-only table -> friendly to high write throughput.
+    --   * BRIN index on ts: cheap and effective for append-only time-ordered data.
+    --   * Composite btree (vehicle_id, signal, ts) powers the common query pattern
+    --     "give me signal X for vehicle Y over time range [a,b]".
+    -- ---------------------------------------------------------------------------
+    CREATE TABLE IF NOT EXISTS telemetry (
+        id            BIGSERIAL PRIMARY KEY,
+        vehicle_id    VARCHAR(64)       NOT NULL,
+        message_name  VARCHAR(64),
+        signal        VARCHAR(64)       NOT NULL,
+        value         DOUBLE PRECISION  NOT NULL,
+        ts            TIMESTAMPTZ       NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_telemetry_vehicle_signal_ts
+        ON telemetry (vehicle_id, signal, ts DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_telemetry_ts_brin
+        ON telemetry USING BRIN (ts);
+
+    -- ---------------------------------------------------------------------------
+    -- Diagnostic alerts raised by the predictive-diagnostics service.
+    -- ---------------------------------------------------------------------------
+    CREATE TABLE IF NOT EXISTS diagnostic_alerts (
+        id          BIGSERIAL PRIMARY KEY,
+        vehicle_id  VARCHAR(64)   NOT NULL,
+        type        VARCHAR(32)   NOT NULL,
+        severity    VARCHAR(16)   NOT NULL,
+        signal      VARCHAR(64),
+        value       DOUBLE PRECISION,
+        message     TEXT,
+        ts          TIMESTAMPTZ   NOT NULL,
+        resolved    BOOLEAN       NOT NULL DEFAULT FALSE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_alerts_vehicle_ts
+        ON diagnostic_alerts (vehicle_id, ts DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_alerts_active
+        ON diagnostic_alerts (vehicle_id) WHERE resolved = FALSE;
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: connected-vehicle
+  labels:
+    app: prometheus
+data:
+  prometheus.yml: |
+    # Prometheus scrape configuration for the connected vehicle platform.
+    # Each Spring Boot service exposes metrics at /actuator/prometheus via
+    # Micrometer. Targets use Kubernetes Service names in the
+    # connected-vehicle namespace.
+    global:
+      scrape_interval: 10s
+      evaluation_interval: 10s
+      external_labels:
+        platform: connected-vehicle
+
+    scrape_configs:
+      - job_name: prometheus
+        static_configs:
+          - targets: ["localhost:9090"]
+
+      - job_name: spring-services
+        metrics_path: /actuator/prometheus
+        static_configs:
+          - targets: ["can-ingestion-service:8081"]
+            labels: { service: can-ingestion }
+          - targets: ["dbc-decoder-service:8082"]
+            labels: { service: dbc-decoder }
+          - targets: ["telemetry-storage-service:8083"]
+            labels: { service: telemetry-storage }
+          - targets: ["predictive-diagnostics-service:8084"]
+            labels: { service: predictive-diagnostics }
+          - targets: ["fleet-analytics-service:8085"]
+            labels: { service: fleet-analytics }
+          - targets: ["api-gateway-service:8080"]
+            labels: { service: api-gateway }

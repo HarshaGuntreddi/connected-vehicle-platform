@@ -1,0 +1,50 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: can-ingestion-service
+  kafka:
+    bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      acks: all
+      properties:
+        # Consumers use an explicit target type, so don't emit type headers.
+        spring.json.add.type.headers: false
+
+# Kafka topic this service publishes to
+topic:
+  raw-can: ${TOPIC_RAW_CAN:raw-can-frames}
+
+# CAN source configuration
+can:
+  mode: ${CAN_MODE:simulator}       # simulator | hardware
+  interface: ${CAN_INTERFACE:vcan0}
+  vehicle-id: ${CAN_VEHICLE_ID:VIN-HW-01}
+
+# Simulator tuning (only used when can.mode=simulator)
+sim:
+  vehicle-count: ${SIM_VEHICLE_COUNT:3}
+  rate-hz: ${SIM_RATE_HZ:10}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    tags:
+      service: can-ingestion
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+
+logging:
+  level:
+    com.fleet: INFO

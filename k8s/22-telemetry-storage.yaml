@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: telemetry-storage-service
+  namespace: connected-vehicle
+  labels:
+    app: telemetry-storage-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: telemetry-storage-service
+  template:
+    metadata:
+      labels:
+        app: telemetry-storage-service
+    spec:
+      containers:
+        - name: telemetry-storage-service
+          image: connected-vehicle/telemetry-storage-service:1.0.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8083
+              name: http
+          envFrom:
+            - configMapRef:
+                name: platform-config
+            - secretRef:
+                name: platform-secrets
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8083
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8083
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: telemetry-storage-service
+  namespace: connected-vehicle
+  labels:
+    app: telemetry-storage-service
+spec:
+  type: ClusterIP
+  selector:
+    app: telemetry-storage-service
+  ports:
+    - port: 8083
+      targetPort: 8083
+      name: http

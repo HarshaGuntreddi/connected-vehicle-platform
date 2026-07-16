@@ -1,0 +1,87 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "title": "Fleet & System Metrics",
+  "uid": "fleet-system",
+  "tags": ["connected-vehicle"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "time": { "from": "now-30m", "to": "now" },
+  "refresh": "10s",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "CAN Frames Published /s",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [ { "expr": "sum(rate(can_frames_published_total[1m]))" } ]
+    },
+    {
+      "type": "stat",
+      "title": "Telemetry Decoded /s",
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [ { "expr": "sum(rate(telemetry_decoded_total[1m]))" } ]
+    },
+    {
+      "type": "stat",
+      "title": "Telemetry Rows Stored /s",
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [ { "expr": "sum(rate(telemetry_stored_total[1m]))" } ]
+    },
+    {
+      "type": "stat",
+      "title": "Alerts /s",
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [ { "expr": "sum(rate(diagnostic_alerts_total[5m]))" } ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Kafka Consumer Lag (records)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "sum by (service, client_id) (kafka_consumer_fetch_manager_records_lag)", "legendFormat": "{{service}}/{{client_id}}" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "HTTP Request Rate by Service",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "sum by (service) (rate(http_server_requests_seconds_count[1m]))", "legendFormat": "{{service}}" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "JVM Heap Used by Service",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "bytes" } },
+      "targets": [
+        { "expr": "sum by (service) (jvm_memory_used_bytes{area=\"heap\"})", "legendFormat": "{{service}}" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Process CPU Usage by Service",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percentunit" } },
+      "targets": [
+        { "expr": "process_cpu_usage", "legendFormat": "{{service}}" }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Up / Down Targets",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 22 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [ { "expr": "up{job=\"spring-services\"}", "format": "table", "instant": true } ]
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+VERSION "1.0 connected-vehicle-platform sample DBC"
+
+NS_ :
+
+BS_:
+
+BU_ ECU Gateway
+
+BO_ 256 EngineData: 8 ECU
+ SG_ EngineSpeed : 0|16@1+ (0.25,0) [0|16383.75] "rpm" Gateway
+ SG_ CoolantTemp : 16|8@1+ (1,-40) [-40|215] "degC" Gateway
+ SG_ ThrottlePosition : 24|8@1+ (0.4,0) [0|102] "%" Gateway
+
+BO_ 512 BatteryData: 8 ECU
+ SG_ BatteryVoltage : 0|16@1+ (0.001,0) [0|65.535] "V" Gateway
+ SG_ VehicleSpeed : 16|16@1+ (0.01,0) [0|655.35] "km/h" Gateway
+
+BO_ 768 FaultData: 8 ECU
+ SG_ FaultCode : 0|16@1+ (1,0) [0|65535] "" Gateway

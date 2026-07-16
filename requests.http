@@ -1,0 +1,76 @@
+### Connected Vehicle Platform — REST endpoint tests
+### Use with the VS Code "REST Client" extension or IntelliJ HTTP client.
+### Requests go through the API gateway (8080); direct-service URLs are shown too.
+
+@gateway = http://localhost:8080
+@ingestion = http://localhost:8081
+@decoder = http://localhost:8082
+@storage = http://localhost:8083
+@diagnostics = http://localhost:8084
+@analytics = http://localhost:8085
+
+### ---------------------------------------------------------------------------
+### Gateway index (lists routes + swagger links)
+GET {{gateway}}/
+
+### ---------------------------------------------------------------------------
+### CAN Ingestion — status
+GET {{gateway}}/api/ingestion/status
+
+### Direct
+GET {{ingestion}}/api/ingestion/status
+
+### ---------------------------------------------------------------------------
+### DBC Decoder — list loaded message/signal definitions
+GET {{gateway}}/api/decoder/messages
+
+### Decode a single raw frame on demand (EngineData, canId 256/0x100).
+### data below encodes EngineSpeed≈2500rpm, CoolantTemp≈92C, Throttle≈40%
+POST {{gateway}}/api/decoder/decode
+Content-Type: application/json
+
+{
+  "vehicleId": "TEST-1",
+  "canId": 256,
+  "dlc": 8,
+  "data": "1027840000000000"
+}
+
+### ---------------------------------------------------------------------------
+### Telemetry Storage — list vehicles
+GET {{gateway}}/api/telemetry/vehicles
+
+### Latest value per signal for a vehicle
+GET {{gateway}}/api/telemetry/VIN-0001/latest
+
+### Query a signal over a time range (defaults to last hour if omitted)
+GET {{gateway}}/api/telemetry?vehicleId=VIN-0001&signal=CoolantTemp&limit=100
+
+### ---------------------------------------------------------------------------
+### Predictive Diagnostics — all vehicle health scores
+GET {{gateway}}/api/diagnostics/health
+
+### One vehicle's health
+GET {{gateway}}/api/diagnostics/health/VIN-0001
+
+### Active alerts
+GET {{gateway}}/api/diagnostics/alerts?activeOnly=true&limit=50
+
+### All alerts for a vehicle
+GET {{gateway}}/api/diagnostics/alerts?vehicleId=VIN-0001&limit=50
+
+### ---------------------------------------------------------------------------
+### Fleet Analytics — summary
+GET {{gateway}}/api/fleet/summary
+
+### Top fault codes
+GET {{gateway}}/api/fleet/top-faults?limit=10
+
+### Alerts per vehicle
+GET {{gateway}}/api/fleet/alerts-per-vehicle
+
+### ---------------------------------------------------------------------------
+### Observability
+GET {{ingestion}}/actuator/prometheus
+
+GET {{diagnostics}}/actuator/health

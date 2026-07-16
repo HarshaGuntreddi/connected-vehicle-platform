@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dbc-decoder-service
+  namespace: connected-vehicle
+  labels:
+    app: dbc-decoder-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dbc-decoder-service
+  template:
+    metadata:
+      labels:
+        app: dbc-decoder-service
+    spec:
+      containers:
+        - name: dbc-decoder-service
+          image: connected-vehicle/dbc-decoder-service:1.0.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8082
+              name: http
+          envFrom:
+            - configMapRef:
+                name: platform-config
+            - secretRef:
+                name: platform-secrets
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8082
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8082
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dbc-decoder-service
+  namespace: connected-vehicle
+  labels:
+    app: dbc-decoder-service
+spec:
+  type: ClusterIP
+  selector:
+    app: dbc-decoder-service
+  ports:
+    - port: 8082
+      targetPort: 8082
+      name: http

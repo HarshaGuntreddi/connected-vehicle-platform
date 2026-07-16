@@ -1,0 +1,48 @@
+spring:
+  application:
+    name: api-gateway-service
+  cloud:
+    gateway:
+      # Each route matches a URL path prefix (Path predicate) and forwards the
+      # request, unmodified, to the corresponding backend service. No filters /
+      # rewrites are configured because every backend already serves the same
+      # /api/... path space that clients call here — the gateway is a pure
+      # single-entry-point proxy. Each target URI is overridable via an env var
+      # (for local / k8s deployments), defaulting to the docker-compose service
+      # name and port.
+      routes:
+        - id: ingestion
+          uri: ${INGESTION_URI:http://can-ingestion-service:8081}
+          predicates:
+            - Path=/api/ingestion/**
+        - id: decoder
+          uri: ${DECODER_URI:http://dbc-decoder-service:8082}
+          predicates:
+            - Path=/api/decoder/**
+        - id: telemetry
+          uri: ${STORAGE_URI:http://telemetry-storage-service:8083}
+          predicates:
+            - Path=/api/telemetry/**
+        - id: diagnostics
+          uri: ${DIAGNOSTICS_URI:http://predictive-diagnostics-service:8084}
+          predicates:
+            - Path=/api/diagnostics/**
+        - id: fleet
+          uri: ${ANALYTICS_URI:http://fleet-analytics-service:8085}
+          predicates:
+            - Path=/api/fleet/**
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics,gateway
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    tags:
+      service: api-gateway

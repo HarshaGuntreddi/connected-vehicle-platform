@@ -1,0 +1,69 @@
+server:
+  port: 8084
+
+spring:
+  application:
+    name: predictive-diagnostics-service
+  kafka:
+    bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: predictive-diagnostics
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.value.default.type: com.fleet.common.dto.DecodedTelemetry
+        spring.json.trusted.packages: com.fleet.common.dto
+        spring.json.use.type.headers: false
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      properties:
+        spring.json.add.type.headers: false
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/telemetry}
+    username: ${SPRING_DATASOURCE_USERNAME:fleet}
+    password: ${SPRING_DATASOURCE_PASSWORD:fleetpass}
+  jpa:
+    hibernate:
+      # Schema is pre-created by infra migrations; never let Hibernate touch DDL.
+      ddl-auto: none
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          # Persist/read TIMESTAMPTZ columns in UTC regardless of JVM zone.
+          time_zone: UTC
+
+# Kafka topics (overridable via env).
+topic:
+  decoded: ${TOPIC_DECODED:decoded-telemetry}
+  alerts: ${TOPIC_ALERTS:diagnostic-alerts}
+
+# Anomaly-detection thresholds (overridable via env).
+diagnostics:
+  coolant-temp-warn: ${COOLANT_TEMP_WARN:105}
+  coolant-temp-crit: ${COOLANT_TEMP_CRIT:115}
+  battery-voltage-min: ${BATTERY_VOLTAGE_MIN:11.8}
+  rpm-max: ${RPM_MAX:6500}
+  zscore-threshold: ${ZSCORE_THRESHOLD:3.0}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    tags:
+      service: predictive-diagnostics
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+
+logging:
+  level:
+    com.fleet: INFO

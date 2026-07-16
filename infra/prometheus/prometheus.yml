@@ -1,0 +1,29 @@
+# Prometheus scrape configuration for the connected vehicle platform.
+# Each Spring Boot service exposes metrics at /actuator/prometheus via
+# Micrometer. Targets use Docker Compose service names on the shared network.
+global:
+  scrape_interval: 10s
+  evaluation_interval: 10s
+  external_labels:
+    platform: connected-vehicle
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: spring-services
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["can-ingestion-service:8081"]
+        labels: { service: can-ingestion }
+      - targets: ["dbc-decoder-service:8082"]
+        labels: { service: dbc-decoder }
+      - targets: ["telemetry-storage-service:8083"]
+        labels: { service: telemetry-storage }
+      - targets: ["predictive-diagnostics-service:8084"]
+        labels: { service: predictive-diagnostics }
+      - targets: ["fleet-analytics-service:8085"]
+        labels: { service: fleet-analytics }
+      - targets: ["api-gateway-service:8080"]
+        labels: { service: api-gateway }
